@@ -1,0 +1,26 @@
+{
+  "name": "merchant-bot-swarm",
+  "version": "1.0.0",
+  "description": "海外商家机器人群：基于 pi agent 框架的销售出单 / 海关报关 / 工厂出货三智能体协作系统",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "dev": "node src/main.ts",
+    "demo": "node scripts/demo.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "~5.9.0",
+    "vitest": "^5.0.0"
+  }
+}

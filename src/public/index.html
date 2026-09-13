@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>海外商家机器人群 · 业务仪表盘</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">🐳 海外商家机器人群<small>销售出单 ⇄ 海关报关 ⇄ 工厂出货 · 三智能体协作</small></div>
+    <span class="badge" id="provider-badge"><span class="dot"></span><span id="provider-text">连接中…</span></span>
+    <div class="spacer"></div>
+    <button class="btn primary" id="btn-demo">▶ 开始自动演示</button>
+    <button class="btn" id="btn-meeting">👥 立即对齐开会</button>
+    <button class="btn danger" id="btn-reset">↺ 重置</button>
+  </header>
+
+  <div class="wrap">
+    <!-- KPI 指标 -->
+    <section class="grid-kpi">
+      <div class="card kpi"><div class="label">🧾 总订单</div><div class="value" id="kpi-orders">–</div></div>
+      <div class="card kpi"><div class="label">💰 成交额</div><div class="value" id="kpi-revenue">–</div></div>
+      <div class="card kpi"><div class="label">🛃 待报关</div><div class="value" id="kpi-decl">–</div></div>
+      <div class="card kpi"><div class="label">✅ 已放行</div><div class="value" id="kpi-ok">–</div></div>
+      <div class="card kpi"><div class="label">🚚 在途</div><div class="value" id="kpi-transit">–</div></div>
+      <div class="card kpi"><div class="label">📦 已交付</div><div class="value" id="kpi-done">–</div></div>
+      <div class="card chart-card"><div class="label">近 7 日成单</div><div id="chart-days"></div></div>
+    </section>
+
+    <!-- 智能体状态 -->
+    <section class="agents-row" id="agents-row"></section>
+
+    <!-- 主区域：看板 + 工作台 -->
+    <section class="main-grid">
+      <div>
+        <div class="card" style="padding:14px 16px 10px">
+          <div class="board" id="board"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="tabs">
+          <button class="tab active" data-tab="chat">💬 客户会话</button>
+          <button class="tab" data-tab="customs">🛃 报关工作台</button>
+          <button class="tab" data-tab="ship">🚚 出货工作台</button>
+          <button class="tab" data-tab="group">👥 对齐群聊</button>
+          <button class="tab" data-tab="feed">⚡ 事件流</button>
+        </div>
+        <div class="tab-body" id="tab-body"></div>
+      </div>
+    </section>
+
+    <footer class="credits">Merchant Bot Swarm · 基于 pi agent 框架（pi-agent-core + pi-ai）构建 · 全部业务事件实时推送</footer>
+  </div>
+
+  <!-- 订单详情弹窗 -->
+  <div class="modal-mask" id="modal-mask">
+    <div class="modal">
+      <button class="close" id="modal-close">✕</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div class="demo-toast" id="demo-toast"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
