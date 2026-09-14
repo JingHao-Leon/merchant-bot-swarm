@@ -139,6 +139,47 @@ describe("全链路集成：询价 → 报价 → 下单 → 报关 → 生产 �
     swarm.stop();
   });
 
+  it("大宗订单：工厂产能拒单 → 对齐会 → 分批排产 → 复用运单交付闭环", async () => {
+    const swarm = new Swarm(testConfig(), { persistPath: null, autoCustomer: true });
+    await swarm.handleCustomerMessage({
+      customerName: "Oliver Grant",
+      country: "GB",
+      channel: "whatsapp",
+      caseId: "CASE-GB-BAG",
+      text: "你好，我们需要订购 3000 只 BP-450 户外双肩包，发到费利克斯托港（GB），请报最优惠价格。",
+    });
+
+    const orderId = await waitFor("成单", () =>
+      [...swarm.store.orders.values()].find((o) => o.customer.name === "Oliver Grant")?.id ?? false,
+    );
+    const order = swarm.store.mustOrder(orderId);
+    expect(order.caseId).toBe("CASE-GB-BAG");
+    expect(order.totalAmount).toBe(38832);
+
+    await waitFor("放行", () => {
+      const d = swarm.store.declarationForOrder(orderId);
+      return d && (d.status === "cleared" || d.status === "accepted") ? d.declarationNo ?? "ok" : false;
+    });
+    // 拒单异常是瞬态（分批协调毫秒级完成），断言时间线留痕
+    await waitFor("工厂拒单留痕", () => (order.timeline.some((t) => /产能不足|拒单/.test(t.text)) ? "rejected" : false));
+    await waitFor("分批排产拉回", () =>
+      order.timeline.some((t) => t.text.includes("分批") && t.text.includes("2000")) ? "split" : false,
+    );
+    await waitFor("发货", () => swarm.store.shipmentForOrder(orderId)?.trackingNo ?? false);
+    tickUntil(swarm, orderId, "delivered");
+    expect(order.status).toBe("delivered");
+
+    // 分批复用同一运单：该订单只有一张运单，拒单历史保留其时间线
+    const shipments = [...swarm.store.shipments.values()].filter((s) => s.orderId === orderId);
+    expect(shipments).toHaveLength(1);
+    expect(shipments[0].events.some((e) => e.status === "delayed")).toBe(true);
+    expect(shipments[0].status).toBe("delivered");
+    // 产能应急对齐会召开且归档
+    const meeting = [...swarm.store.groupRooms.values()].find((r) => r.topic.includes("产能"));
+    expect(meeting?.status).toBe("closed");
+    swarm.stop();
+  });
+
   it("收尾对齐会：三岗发言 + 会议纪要归档", async () => {
     const swarm = new Swarm(testConfig(), { persistPath: null, autoCustomer: false });
     const room = await swarm.runMeeting("测试对齐", "同步状态。", "manual");

@@ -67,8 +67,10 @@ export function startServer(swarm: Swarm, publicDir: string, port: number): Serv
     }
 
     if (req.method === "GET" && path === "/api/state") {
+      const { CASES } = await import("./cases.ts");
       return json(res, 200, {
         ...swarm.store.snapshot(),
+        cases: CASES,
         agents: swarm.describeAgents(),
         provider: swarm.llm.describe(),
         autoCustomer: swarm.autoCustomer,

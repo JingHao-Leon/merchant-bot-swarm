@@ -56,12 +56,14 @@ export class Store {
 
   // ---------------- 会话 ----------------
 
-  getOrCreateCustomerRoom(customerName: string, country: string, channel: string): CustomerRoom {
+  getOrCreateCustomerRoom(customerName: string, country: string, channel: string, caseId?: string): CustomerRoom {
     const id = `cust-${slugify(customerName)}`;
     let room = this.customerRooms.get(id);
     if (!room) {
-      room = { id, customerName, country, channel, messages: [], createdAt: Date.now() };
+      room = { id, customerName, country, channel, caseId, messages: [], createdAt: Date.now() };
       this.customerRooms.set(id, room);
+    } else if (caseId && !room.caseId) {
+      room.caseId = caseId;
     }
     return room;
   }
@@ -95,6 +97,7 @@ export class Store {
     incoterm: string;
     shippingAddress: string;
     note?: string;
+    caseId?: string;
     roomId: string;
   }): Order {
     const now = Date.now();
@@ -112,6 +115,7 @@ export class Store {
       incoterm: input.incoterm,
       shippingAddress: input.shippingAddress,
       note: input.note,
+      caseId: input.caseId,
       status: "confirmed",
       timeline: [{ ts: now, event: "confirmed", text: `订单成立，应收 ${input.currency} ${input.totalAmount}` }],
       createdAt: now,

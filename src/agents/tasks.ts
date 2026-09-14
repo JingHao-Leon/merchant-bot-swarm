@@ -8,6 +8,7 @@ export interface CustomerTask {
   kind: "customer_message";
   roomId: string;
   customerName: string;
+  caseId?: string;
   text: string;
 }
 
@@ -47,6 +48,22 @@ export interface ShipTask {
   groupRoomId?: string;
 }
 
+export interface SplitOrderTask {
+  kind: "split_order";
+  orderId: string;
+  sku: string;
+  qty: number;
+  groupRoomId?: string;
+}
+
+export interface NotifySplitTask {
+  kind: "notify_split";
+  orderId: string;
+  roomId: string;
+  firstBatchQty: number;
+  remark: string;
+}
+
 export interface MeetingTask {
   kind: "meeting_reply";
   roomId: string;
@@ -61,12 +78,14 @@ export type AgentTask =
   | AmendTask
   | FulfillTask
   | ShipTask
+  | SplitOrderTask
+  | NotifySplitTask
   | MeetingTask;
 
 export function renderTask(task: AgentTask): string {
   switch (task.kind) {
     case "customer_message":
-      return `【客户消息】房间 ${task.roomId} | 客户 ${task.customerName}：${task.text}`;
+      return `【客户消息】房间 ${task.roomId} | 客户 ${task.customerName}${task.caseId ? ` | 案例 ${task.caseId}` : ""}：${task.text}`;
     case "declare_order":
       return `【报关任务】订单 ${task.orderId} | 对齐群 ${task.groupRoomId ?? "-"}${
         task.retryOf ? ` | 重报（上一单 ${task.retryOf} 被退回）` : ""
@@ -81,6 +100,13 @@ export function renderTask(task: AgentTask): string {
       return `【出货任务】订单 ${task.orderId} | 报关单号 ${task.declarationNo} | 客户房间 ${
         task.customerRoomId ?? "-"
       } | 对齐群 ${task.groupRoomId ?? "-"}：请确认报关放行后向工厂询价、下生产单。`;
+    case "split_order":
+      return `【分批排产任务】订单 ${task.orderId} | 商品 ${task.sku} | 第一批数量 ${task.qty} | 对齐群 ${
+        task.groupRoomId ?? "-"
+      }：工厂整单产能不足，已与客户/对齐会确认分批，请按第一批数量重新 place_factory_order。`;
+    case "notify_split":
+      const cleanRemark = task.remark.replace(/[（）()]/g, "");
+      return `【分批发货告知】订单 ${task.orderId} | 客户房间 ${task.roomId} | 第一批 ${task.firstBatchQty} 件（${cleanRemark}）：请调用 reply_customer 向客户说明分批发货安排。`;
     case "arrange_shipment":
       return `【发货任务】订单 ${task.orderId} | 指定承运商 ${task.carrier} | 客户房间 ${
         task.customerRoomId ?? "-"
@@ -94,6 +120,9 @@ export function renderTask(task: AgentTask): string {
 
 export function parseTask(text: string): AgentTask | null {
   let m: RegExpMatchArray | null;
+  if ((m = text.match(/^【客户消息】房间 (\S+) \| 客户 (.+?) \| 案例 ([A-Za-z0-9-]+)：([\s\S]+)$/))) {
+    return { kind: "customer_message", roomId: m[1], customerName: m[2], caseId: m[3], text: m[4] };
+  }
   if ((m = text.match(/^【客户消息】房间 (\S+) \| 客户 (.+?)：([\s\S]+)$/))) {
     return { kind: "customer_message", roomId: m[1], customerName: m[2], text: m[3] };
   }
@@ -143,6 +172,32 @@ export function parseTask(text: string): AgentTask | null {
       orderId: m[1],
       carrier: m[2],
       customerRoomId: m[3] === "-" ? undefined : m[3],
+    };
+  }
+  if (
+    (m = text.match(
+      /^【分批排产任务】订单 ([A-Za-z]+-\d+) \| 商品 ([A-Z]{2,4}-\d{2,4}) \| 第一批数量 (\d+) \| 对齐群 ([A-Za-z]+-\d+|-)/,
+    ))
+  ) {
+    return {
+      kind: "split_order",
+      orderId: m[1],
+      sku: m[2],
+      qty: Number(m[3]),
+      groupRoomId: m[4] === "-" ? undefined : m[4],
+    };
+  }
+  if (
+    (m = text.match(
+      /^【分批发货告知】订单 ([A-Za-z]+-\d+) \| 客户房间 (\S+) \| 第一批 (\d+) 件（([\s\S]+?)）/,
+    ))
+  ) {
+    return {
+      kind: "notify_split",
+      orderId: m[1],
+      roomId: m[2],
+      firstBatchQty: Number(m[3]),
+      remark: m[4],
     };
   }
   if ((m = text.match(/^【业务对齐群】房间 (\S+) \| 议程：([\s\S]+)\n你是 (\S+) 岗位/))) {

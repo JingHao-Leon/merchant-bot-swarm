@@ -154,6 +154,10 @@ describe("任务信封协议：渲染与解析互逆", () => {
     { kind: "amend_order" as const, orderId: "ORD-3", issues: ["贸易术语非法：X"], roomId: "sync-3" },
     { kind: "fulfill_order" as const, orderId: "ORD-4", declarationNo: "CUS20260101-0001", customerRoomId: "cust-b", groupRoomId: "sync-4" },
     { kind: "arrange_shipment" as const, orderId: "ORD-5", carrier: "DHL", customerRoomId: "cust-c" },
+    { kind: "split_order" as const, orderId: "ORD-6", sku: "BP-450", qty: 2000, groupRoomId: "sync-6" },
+    { kind: "split_order" as const, orderId: "ORD-6", sku: "BP-450", qty: 2000 },
+    { kind: "notify_split" as const, orderId: "ORD-7", roomId: "cust-d", firstBatchQty: 2000, remark: "工厂产能不足 需分批" },
+    { kind: "customer_message" as const, roomId: "cust-e", customerName: "Oliver", caseId: "CASE-GB-BAG", text: "我要下单" },
     { kind: "meeting_reply" as const, roomId: "sync-6", agenda: "例行对齐", role: "sales" as const },
   ];
   for (const task of cases) {

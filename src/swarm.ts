@@ -15,7 +15,8 @@ import { createBusinessAgent, type BusinessAgent } from "./agents/base.ts";
 import { customsTools, fulfillmentTools, groupToolsFor, salesTools, type ToolDeps } from "./agents/tools.ts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { renderTask, type AgentTask } from "./agents/tasks.ts";
-import { nextTrackStep } from "./factoryService.ts";
+import { factoryQuote, nextTrackStep } from "./factoryService.ts";
+import { caseOf } from "./cases.ts";
 import type { AgentRole, BusEvent, GroupRoom } from "./types.ts";
 import { seedSeq } from "./util.ts";
 
@@ -168,11 +169,30 @@ export class Swarm {
         break;
       }
       case "factory.rejected": {
+        const orderId = String(data.orderId);
+        const order = this.store.mustOrder(orderId);
+        const item = order.items[0];
+        const remark = String(data.remark ?? "");
+        // 分批方案：第一批 = min(需求, 工厂 4 天产能)（真实大宗贸易常见的分批交货安排）
+        const firstBatch = Math.min(item.qty, factoryQuote(item.sku, item.qty).capacityPerDay * 4);
         void this.runMeeting(
-          `订单 ${data.orderId} 工厂产能告警`,
-          `工厂拒单（${data.remark}），需要三岗对齐：是否拆单、改期或换供应商。`,
+          `订单 ${orderId} 工厂产能告警`,
+          `工厂拒单（${remark}），对齐结论：按第一批 ${firstBatch} 件分批交货，销售同步客户。`,
           "event",
         );
+        this.submit("sales", {
+          kind: "notify_split",
+          orderId,
+          roomId: this.latestCustomerRoomId(orderId) ?? "",
+          firstBatchQty: firstBatch,
+          remark: remark,
+        });
+        this.submit("fulfillment", {
+          kind: "split_order",
+          orderId,
+          sku: item.sku,
+          qty: firstBatch,
+        });
         break;
       }
       default:
@@ -207,17 +227,19 @@ export class Swarm {
   }
 
   /** GUI/演示入口：客户发来一条消息 */
-  async handleCustomerMessage(input: { customerName: string; country?: string; channel?: string; text: string }): Promise<string> {
+  async handleCustomerMessage(input: { customerName: string; country?: string; channel?: string; caseId?: string; text: string }): Promise<string> {
     const room = this.store.getOrCreateCustomerRoom(
       input.customerName,
       input.country ?? "US",
       input.channel ?? "whatsapp",
+      input.caseId,
     );
     this.store.postCustomerMessage(room.id, "customer", input.text);
     await this.submit("sales", {
       kind: "customer_message",
       roomId: room.id,
       customerName: input.customerName,
+      caseId: room.caseId,
       text: input.text,
     });
     return room.id;
@@ -258,16 +280,18 @@ export class Swarm {
 
   // ---------------- 承运商轨迹推进 ----------------
 
-  tickCarrier(): void {
+  /** 推进物流轨迹；传入 onlyOrderIds 时只推进这些订单的运单；定格案例（freezeInTransit）始终跳过 */
+  tickCarrier(onlyOrderIds?: string[]): void {
     for (const shipment of this.store.shipments.values()) {
+      if (onlyOrderIds && !onlyOrderIds.includes(shipment.orderId)) continue;
+      const order = this.store.orders.get(shipment.orderId);
+      if (order?.caseId && caseOf(order.caseId)?.freezeInTransit) continue;
       const last = shipment.events[shipment.events.length - 1];
       if (!last) continue;
       if (["arranging", "factory_confirmed", "delayed", "delivered"].includes(last.status)) continue;
       const step = nextTrackStep(shipment);
       if (!step) continue;
-      this.store.setShipmentStatus(shipment.id, step.status, `${step.text}（${step.location}）`, {
-        // 轨迹事件只追加，不覆盖运单号等字段
-      });
+      this.store.setShipmentStatus(shipment.id, step.status, `${step.text}（${step.location}）`);
     }
   }
 

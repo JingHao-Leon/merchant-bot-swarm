@@ -20,8 +20,13 @@ async function main(): Promise<number> {
   };
   console.log("\n───── 结果断言 ─────");
   const fresh = orders.map((o) => swarm.store.orders.get(o.id)!);
-  assert(fresh.every((o) => o.status === "delivered"), `${fresh.length} 笔订单全部 delivered`);
-  assert(fresh.every((o) => o.timeline.length >= 5), "订单时间线完整（≥5 条事件）");
+  const delivered = fresh.filter((o) => o.status === "delivered");
+  const inTransit = fresh.filter((o) => o.status === "shipped");
+  assert(delivered.length === 4 && inTransit.length === 1, "4 笔订单 delivered + 1 笔在途定格（加拿大新客）");
+  assert(
+    delivered.every((o) => o.timeline.length >= 5) && inTransit.every((o) => o.timeline.length >= 4),
+    "订单时间线完整（闭环 ≥5 条 / 在途 ≥4 条事件）",
+  );
   const decls = fresh.map((o) => swarm.store.declarationForOrder(o.id)!);
   assert(decls.every((d) => d.status === "accepted" || d.status === "cleared"), "报关单全部放行");
   assert(
@@ -29,11 +34,24 @@ async function main(): Promise<number> {
     "退单补正（UN38.3）留痕完整",
   );
   assert(fresh.some((o) => o.totalAmount >= 2000), "高值订单触发查验布控支线");
+  const gbCase = fresh.find((o) => o.caseId === "CASE-GB-BAG")!;
+  assert(
+    gbCase.timeline.some((t) => /产能不足|拒单/.test(t.text)) &&
+      gbCase.timeline.some((t) => /分批/.test(t.text)) &&
+      gbCase.status === "delivered",
+    "英国 3000 只背包案例：产能拒单 → 对齐协调 → 分批排产 → 交付闭环",
+  );
+  const gbShipments = [...swarm.store.shipments.values()].filter((s) => s.orderId === gbCase.id);
+  assert(gbShipments.length === 1, "分批复用同一运单（拒单历史保留在时间线，无幽灵运单）");
   const groupRooms = [...swarm.store.groupRooms.values()];
-  assert(groupRooms.length >= 2, `业务对齐群 ≥ 2 场（实际 ${groupRooms.length}）`);
+  assert(groupRooms.length >= 3, `业务对齐群 ≥ 3 场（实际 ${groupRooms.length}：UN38.3 应急 + 产能应急 + 日结）`);
   assert(groupRooms.every((r) => r.minutes && r.messages.length >= 4), "每场对齐群都有议程、三岗发言与纪要");
   const agents = swarm.describeAgents();
-  assert(agents.every((a) => a.stats.tasks >= 2), "三个智能体都真实执行了多轮任务");
+  assert(agents.every((a) => a.stats.tasks >= 3), "三个智能体都真实执行了多轮任务");
+  assert(
+    fresh.every((o) => o.caseId && swarm.store.declarationForOrder(o.id)),
+    "每个案例订单都有归属案例标注与报关单",
+  );
 
   console.log("\n───── KPI ─────");
   const kpi = swarm.store.kpis();

@@ -86,6 +86,7 @@ function render() {
   $("#provider-text").textContent = `模型：${d.provider}`;
   renderKpi(d.kpis);
   renderAgents(d.agents);
+  renderDistributions(d);
   renderBoard(d.orders, d.declarations);
   renderTab(d);
   $("#btn-demo").disabled = d.demoRunning;
@@ -185,6 +186,7 @@ function renderTab(d) {
     case "customs": body.innerHTML = renderCustoms(d); break;
     case "ship": body.innerHTML = renderShip(d); break;
     case "group": body.innerHTML = renderGroup(d); break;
+    case "cases": body.innerHTML = renderCases(d); break;
     case "feed": body.innerHTML = renderFeed(); break;
   }
 }
@@ -307,6 +309,113 @@ function renderGroup(d) {
     .join("");
 }
 
+// ---------------- 业务分布 ----------------
+function renderDistributions(d) {
+  // 目的国分布（按订单数与金额）
+  const byCountry = {};
+  for (const o of d.orders) {
+    const c = o.customer.country;
+    byCountry[c] = byCountry[c] ?? { count: 0, amount: 0 };
+    byCountry[c].count += 1;
+    byCountry[c].amount += o.totalAmount;
+  }
+  const countries = Object.entries(byCountry).sort((a, b) => b[1].amount - a[1].amount);
+  const maxAmount = Math.max(1, ...countries.map(([, v]) => v.amount));
+  $("#dist-country").innerHTML = countries
+    .map(
+      ([c, v]) =>
+        `<div class="dist-item"><span class="k">${flagOf(c)} ${c}</span><span class="bar-wrap"><span class="bar" style="width:${Math.max(6, (v.amount / maxAmount) * 100)}%"></span></span><span class="v">${v.count} 单 · $${Math.round(v.amount).toLocaleString()}</span></div>`,
+    )
+    .join("") || '<div class="empty" style="padding:8px">暂无数据</div>';
+
+  // 报关状态分布
+  const declMeta = { accepted: ["海关受理", "accepted"], cleared: ["查验放行", "cleared"], inspection: ["查验中", "inspection"], rejected: ["退单补正", "rejected"], draft: ["整理中", "draft"] };
+  const declCount = {};
+  for (const dd of d.declarations) declCount[dd.status] = (declCount[dd.status] ?? 0) + 1;
+  $("#dist-decl").innerHTML =
+    Object.entries(declCount)
+      .map(([st, n]) => `<span class="chip ${declMeta[st]?.[1] ?? "draft"}">${declMeta[st]?.[0] ?? st} × ${n}</span>`)
+      .join("") || '<div class="empty" style="padding:8px">暂无报关单</div>';
+
+  // 订单状态分布
+  const orderCount = {};
+  for (const o of d.orders) orderCount[o.status] = (orderCount[o.status] ?? 0) + 1;
+  $("#dist-order").innerHTML =
+    Object.entries(orderCount)
+      .map(([st, n]) => {
+        const m = STATUS_META[st] ?? { label: st, color: "#64748b", soft: "#f1f5f9" };
+        return `<span class="chip" style="background:${m.soft};color:${m.color}">${m.label} × ${n}</span>`;
+      })
+      .join("") || '<div class="empty" style="padding:8px">暂无订单</div>';
+}
+
+// ---------------- 案例库 ----------------
+function caseDuration(order) {
+  const tsOf = (event) => order.timeline.find((t) => t.event === event)?.ts;
+  const confirmed = tsOf("confirmed");
+  const declared = tsOf("declared");
+  const shipped = tsOf("shipped");
+  const delivered = tsOf("delivered");
+  const fmt = (ms) => (ms == null ? "—" : ms < 1000 ? "<1s" : `${(ms / 1000).toFixed(1)}s`);
+  return {
+    declare: delivered || shipped || declared ? fmt((declared ?? 0) - (confirmed ?? 0)) : "—",
+    ship: shipped ? fmt((shipped ?? 0) - (declared ?? confirmed ?? 0)) : "—",
+    transit: delivered ? fmt((delivered ?? 0) - (shipped ?? 0)) : "—",
+    total: delivered ? fmt((delivered ?? 0) - (confirmed ?? 0)) : (shipped ? "在途" : "—"),
+    done: Boolean(delivered),
+  };
+}
+
+function renderCases(d) {
+  const cases = d.cases ?? {};
+  const ordersByCase = {};
+  for (const o of d.orders) {
+    if (!o.caseId) continue;
+    (ordersByCase[o.caseId] = ordersByCase[o.caseId] ?? []).push(o);
+  }
+  const entries = Object.keys(cases).length ? Object.values(cases) : [];
+  if (!entries.length) return emptyHint("暂无案例", "点右上角「开始自动演示」跑出真实案例");
+
+  return entries
+    .map((meta) => {
+      const list = ordersByCase[meta.caseId] ?? [];
+      if (!list.length) return "";
+      const cards = list
+        .map((o) => {
+          const decl = d.declarations.find((x) => x.orderId === o.id);
+          const ship = d.shipments.find((x) => x.orderId === o.id);
+          const dur = caseDuration(o);
+          const rejections = (decl?.previousIssues?.length ?? 0) + (decl?.status === "rejected" ? 1 : 0);
+          const inspected = o.timeline.filter((t) => t.text.includes("布控查验")).length;
+          const delayed = ship?.events.filter((e) => e.status === "delayed").length ?? 0;
+          return `<div class="case-card">
+            <div class="head">
+              <div>
+                <div class="title">📁 ${esc(meta.title)}</div>
+                <div class="industry">${esc(meta.industry)} · ${o.id} · ${fmtFull(o.createdAt)}</div>
+              </div>
+              <span class="chip ${o.status === "delivered" ? "cleared" : "inspection"}">${STATUS_META[o.status]?.label ?? o.status}</span>
+            </div>
+            <div class="tags">${meta.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+            <div class="highlight">💡 ${esc(meta.highlight)}</div>
+            <div class="case-stats">
+              <div class="case-stat"><div class="n">$${Math.round(o.totalAmount).toLocaleString()}</div><div class="l">订单金额</div></div>
+              <div class="case-stat"><div class="n">${dur.total}</div><div class="l">全流程耗时</div></div>
+              <div class="case-stat"><div class="n">${rejections}</div><div class="l">退单补正</div></div>
+              <div class="case-stat"><div class="n">${inspected + delayed}</div><div class="l">查验/延误</div></div>
+            </div>
+            <div class="case-foot">
+              <span>${flagOf(o.customer.country)} ${esc(o.customer.name)} · ${o.items.map((i) => `${i.sku}×${i.qty}`).join(", ")}${ship?.trackingNo ? ` · ${ship.carrier} ${ship.trackingNo}` : ""}</span>
+              <button class="link" onclick="openOrder('${o.id}')">查看完整链路 →</button>
+            </div>
+          </div>`;
+        })
+        .join("");
+      return cards;
+    })
+    .join("");
+}
+
 function renderFeed() {
   if (!state.events.length) return emptyHint("暂无事件", "所有业务动作都会实时显示在这里");
   return `<div class="feed">${state.events
@@ -373,6 +482,8 @@ window.openOrder = function (orderId) {
           <tr><th>SKU</th><th>品名</th><th>数量</th><th>单价</th></tr>
           ${o.items.map((i) => `<tr><td>${i.sku}</td><td>${esc(i.name)}</td><td>${i.qty}</td><td>${i.unitPrice}</td></tr>`).join("")}
         </table>
+        <div class="sec-title">环节耗时</div>
+        ${durationBlock(o)}
         <div class="sec-title">订单时间线</div>
         <div class="tl">${[...o.timeline].reverse().map((t) => `<div class="tl-item done">${esc(t.text)}<div class="t">${fmtFull(t.ts)}</div></div>`).join("")}</div>
       </div>
@@ -385,6 +496,22 @@ window.openOrder = function (orderId) {
     </div>`;
   $("#modal-mask").classList.add("show");
 };
+
+function durationBlock(order) {
+  const tsOf = (event) => order.timeline.find((t) => t.event === event)?.ts;
+  const fmt = (a, b) => (a == null || b == null ? "—" : `${((a - b) / 1000).toFixed(1)}s`);
+  const confirmed = tsOf("confirmed");
+  const declared = tsOf("declared");
+  const shipped = tsOf("shipped");
+  const delivered = tsOf("delivered");
+  const cells = [
+    { l: "报价→放行", t: fmt(declared, confirmed) },
+    { l: "放行→发货", t: fmt(shipped, declared ?? confirmed) },
+    { l: "发货→签收", t: delivered ? fmt(delivered, shipped) : "在途" },
+    { l: "全流程", t: delivered ? fmt(delivered, confirmed) : "进行中" },
+  ];
+  return `<div class="dur-grid">${cells.map((c) => `<div class="dur-cell"><div class="t">${c.t}</div><div class="l">${c.l}</div></div>`).join("")}</div>`;
+}
 
 function customsBlock(decl) {
   const meta = DECL_STATUS_META[decl.status];

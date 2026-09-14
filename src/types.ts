@@ -38,6 +38,7 @@ export interface Order {
   incoterm: string; // FOB / CIF / DAP / DDP / EXW
   shippingAddress: string;
   note?: string;
+  caseId?: string; // 归属案例（案例库展示用）
   status: OrderStatus;
   timeline: TimelineEntry[];
   createdAt: number;
@@ -150,6 +151,7 @@ export interface CustomerRoom {
   customerName: string;
   country: string;
   channel: string;
+  caseId?: string; // 归属案例（从会话贯通到订单）
   messages: ChatMessage[];
   createdAt: number;
 }

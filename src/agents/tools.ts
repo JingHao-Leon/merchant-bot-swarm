@@ -151,6 +151,7 @@ export function salesTools(deps: ToolDeps): AgentTool<any>[] {
       incoterm: Type.String(),
       shippingAddress: Type.String(),
       note: Type.Optional(Type.String()),
+      caseId: Type.Optional(Type.String({ description: "归属案例 ID（案例库标注用）" })),
     }),
     execute: async (_id, params) => {
       const items = params.items.map((it) => {
@@ -172,6 +173,7 @@ export function salesTools(deps: ToolDeps): AgentTool<any>[] {
         incoterm: params.incoterm,
         shippingAddress: params.shippingAddress,
         note: params.note,
+        caseId: params.caseId,
         roomId: params.roomId,
       });
       deps.notify("order.created", { orderId: order.id, roomId: params.roomId, goods, shipping });
@@ -439,12 +441,19 @@ export function fulfillmentTools(deps: ToolDeps): AgentTool<any>[] {
     }),
     execute: async (_id, params) => {
       const fo = placeFactoryOrder({ orderId: params.orderId, sku: params.sku, qty: params.qty }, Date.now());
-      const shipment = store.createShipment(params.orderId, fo.factoryId);
+      // 产能拒单协调后重新下单：复用原运单，拒单历史保留在同一时间线里
+      const existing = store.shipmentForOrder(params.orderId);
+      const shipment = existing ?? store.createShipment(params.orderId, fo.factoryId);
+      shipment.factoryId = fo.factoryId;
       shipment.factoryOrderNo = fo.factoryOrderNo;
       shipment.factoryEtd = fo.etdTs;
       store.postFactoryMessage(shipment.id, "fulfillment", `工厂你好，订单 ${params.orderId} 需要生产 ${params.sku} × ${params.qty}，请确认排产。`);
       store.postFactoryMessage(shipment.id, "factory", factoryReplyFor(fo));
       if (fo.accepted) {
+        const current = store.mustOrder(params.orderId);
+        if (current.status === "exception") {
+          store.updateOrderStatus(params.orderId, "fulfilling", `与工厂协调分批：第一批 ${params.qty} 件已排产（${fo.factoryOrderNo}）`);
+        }
         store.setShipmentStatus(shipment.id, "factory_confirmed", `工厂已排产（生产单 ${fo.factoryOrderNo}）`, {
           factoryOrderNo: fo.factoryOrderNo,
           factoryEtd: fo.etdTs,

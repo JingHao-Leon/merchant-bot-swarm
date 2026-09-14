@@ -32,6 +32,13 @@
     <!-- 智能体状态 -->
     <section class="agents-row" id="agents-row"></section>
 
+    <!-- 业务分布 -->
+    <section class="dist-row">
+      <div class="card dist-card"><div class="dist-title">🌍 目的国分布</div><div id="dist-country"></div></div>
+      <div class="card dist-card"><div class="dist-title">🛃 报关状态分布</div><div id="dist-decl"></div></div>
+      <div class="card dist-card"><div class="dist-title">📦 订单状态分布</div><div id="dist-order"></div></div>
+    </section>
+
     <!-- 主区域：看板 + 工作台 -->
     <section class="main-grid">
       <div>
@@ -45,6 +52,7 @@
           <button class="tab" data-tab="customs">🛃 报关工作台</button>
           <button class="tab" data-tab="ship">🚚 出货工作台</button>
           <button class="tab" data-tab="group">👥 对齐群聊</button>
+          <button class="tab" data-tab="cases">📚 案例库</button>
           <button class="tab" data-tab="feed">⚡ 事件流</button>
         </div>
         <div class="tab-body" id="tab-body"></div>

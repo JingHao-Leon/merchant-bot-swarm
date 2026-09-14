@@ -71,8 +71,8 @@ export interface ParsedDemand {
 export function parseDemand(text: string): ParsedDemand | null {
   // 语序一：SKU 在前（如 "BH-100 蓝牙耳机 200 个"）；语序二：数量在前（如 "80 个 LT-310 台灯"）
   // (?<!\d)/(?!\d) 防止把 SKU 里的数字截断当成数量（如 "LT-310" 拆成 LT-31 + 0）
-  const skuFirst = text.match(/(?<![A-Za-z0-9-])([A-Z]{2,4}-\d{2,4})(?!\d)\D{0,16}?(\d{1,5})(?!\d)\s*(?:个|件|台|只|pcs|PCS|units?)/i);
-  const qtyFirst = text.match(/(?<![A-Za-z0-9-])(\d{1,5})(?!\d)\s*(?:个|件|台|只|pcs|PCS|units?)\D{0,16}?(?<![A-Za-z0-9-])([A-Z]{2,4}-\d{2,4})(?!\d)/i);
+  const skuFirst = text.match(/(?<![A-Za-z0-9-])([A-Z]{2,4}-\d{2,4})(?!\d)\D{0,16}?(\d{1,5})(?!\d)\s*(?:个|件|台|只|套|pcs|PCS|units?)/i);
+  const qtyFirst = text.match(/(?<![A-Za-z0-9-])(\d{1,5})(?!\d)\s*(?:个|件|台|只|套|pcs|PCS|units?)\D{0,16}?(?<![A-Za-z0-9-])([A-Z]{2,4}-\d{2,4})(?!\d)/i);
   const sku = skuFirst ? skuFirst[1] : qtyFirst?.[2];
   const qty = Number(skuFirst?.[2] ?? qtyFirst?.[1]);
   if (!sku || !findProduct(sku) || !Number.isFinite(qty) || qty <= 0) return null;
@@ -193,6 +193,16 @@ export class Director {
       });
     }
 
+    if (task?.kind === "notify_split") {
+      return toolMsg("reply_customer", {
+        roomId: task.roomId,
+        text:
+          `您好！关于订单 ${task.orderId}：您的需求量较大，工厂产能排满，为保证品质我们与工厂协调了**分批发货**方案——` +
+          `第一批 ${task.firstBatchQty} 件即刻排产（工厂反馈：${task.remark}），第二批紧随其后。` +
+          `第一批发货后我们会同步运单号，感谢理解与支持！`,
+      });
+    }
+
     if (task?.kind === "customer_message") {
       const room = this.store.customerRooms.get(task.roomId);
       const text = task.text;
@@ -213,6 +223,7 @@ export class Director {
           incoterm: quote.incoterm,
           shippingAddress: address,
           note: /UN38\.?3/i.test(text) ? "客户随信提供 UN38.3 测试摘要" : undefined,
+          caseId: task.caseId ?? room?.caseId,
         });
       }
 
@@ -323,6 +334,15 @@ export class Director {
         orderId: task.orderId,
         carrier: task.carrier,
         roomId: task.customerRoomId,
+      });
+    }
+
+    if (task?.kind === "split_order") {
+      return toolMsg("place_factory_order", {
+        orderId: task.orderId,
+        sku: task.sku,
+        qty: task.qty,
+        roomId: task.groupRoomId,
       });
     }
 
